@@ -115,6 +115,7 @@ class LocalWebController(tornado.web.Application):
 
         self.num_records = 0
         self.wsclients = []
+        self.wsVideoClient = None
         self.loop = None
 
         self.dead_zone = 0.05
@@ -127,6 +128,7 @@ class LocalWebController(tornado.web.Application):
             (r"/wsCalibrate", WebSocketCalibrateAPI),
             (r"/calibrate", CalibrateHandler),
             (r"/video", VideoAPI),
+            (r"/wsVideo", WSVideoAPI),
             (r"/wsTest", WsTest),
 
             (r"/static/(.*)", StaticFileHandler,
@@ -157,6 +159,15 @@ class LocalWebController(tornado.web.Application):
                 print(e)
                 pass
 
+    def write_image(self):
+        if self.wsVideoClient is not None:
+            try:
+                img = utils.arr_to_binary(self.img_arr)
+                self.wsVideoClient.write_message(img, binary=True)
+            except Exception as e:
+                print(e)
+                pass
+
     def run_threaded(self, img_arr=None, num_records=0):
         self.img_arr = img_arr
         self.num_records = num_records
@@ -170,6 +181,9 @@ class LocalWebController(tornado.web.Application):
             if self.num_records % 10 == 0:
                 if self.loop is not None:
                     self.loop.add_callback(self.update_wsclients)
+
+        if self.loop is not None and self.img_arr is not None:
+            self.loop.add_callback(self.write_image)
 
         return self.angle, self.throttle, self.mode, self.recording
 
@@ -214,6 +228,21 @@ class CalibrateHandler(RequestHandler):
     """ Serves the calibration web page"""
     async def get(self):
         await self.render("templates/calibrate.html")
+
+
+class WSVideoAPI(tornado.websocket.WebSocketHandler):
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        print("New client connected")
+        self.application.wsVideoClient = self
+
+    def on_message(self, message):
+        pass
+
+    def on_close(self):
+        print("Client disconnected")
 
 
 class WebSocketDriveAPI(tornado.websocket.WebSocketHandler):
